@@ -1,8 +1,8 @@
-import { sql, handleDbError } from "@/lib/db"
+import { sql } from "@/lib/db"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import { Plus, Trophy, Calendar } from "lucide-react"
+import { Plus, Trophy, Calendar, AlertCircle } from "lucide-react"
 
 interface Season {
   id: number
@@ -15,7 +15,7 @@ interface Season {
   runner_up_club_name: string | null
 }
 
-async function getSeasons(): Promise<Season[]> {
+async function getSeasons(): Promise<{ seasons: Season[]; error: string | null }> {
   try {
     const seasons = await sql`
       SELECT 
@@ -27,15 +27,86 @@ async function getSeasons(): Promise<Season[]> {
       LEFT JOIN clubs rc ON s.runner_up_club_id = rc.id
       ORDER BY s.year DESC
     `
-    return seasons as Season[]
-  } catch (error) {
-    handleDbError(error)
+    return { seasons: seasons as Season[], error: null }
+  } catch (error: any) {
+    if (
+      error.message.includes('relation "seasons" does not exist') ||
+      error.message.includes('relation "clubs" does not exist')
+    ) {
+      return { seasons: [], error: "database_not_setup" }
+    }
+    return { seasons: [], error: error.message }
   }
 }
 
 export default async function HistoricalSeasonsPage() {
-  const seasons = await getSeasons()
+  const { seasons, error } = await getSeasons()
 
+  // Handle database not set up
+  if (error === "database_not_setup") {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Historical Seasons</h1>
+          <p className="text-muted-foreground">Track seasons, results, and championship history</p>
+        </div>
+
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardHeader>
+            <CardTitle className="flex items-center text-yellow-700">
+              <AlertCircle className="h-5 w-5 mr-2" />
+              Database Setup Required
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-yellow-600 mb-4">
+              The EDFL database tables need to be created before you can view historical seasons.
+            </p>
+            <Link href="/test-connection">
+              <Button>
+                <AlertCircle className="h-4 w-4 mr-2" />
+                Set Up Database
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // Handle other errors
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Historical Seasons</h1>
+          <p className="text-muted-foreground">Track seasons, results, and championship history</p>
+        </div>
+
+        <Card className="border-red-200 bg-red-50">
+          <CardHeader>
+            <CardTitle className="flex items-center text-red-700">
+              <AlertCircle className="h-5 w-5 mr-2" />
+              Database Error
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="p-3 bg-red-100 rounded border border-red-200 mb-4">
+              <code className="text-red-700 text-sm">{error}</code>
+            </div>
+            <Link href="/test-connection">
+              <Button>
+                <AlertCircle className="h-4 w-4 mr-2" />
+                Diagnose Issue
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // Normal seasons display
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">

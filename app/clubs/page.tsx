@@ -1,9 +1,9 @@
-import { sql, handleDbError } from "@/lib/db"
+import { sql } from "@/lib/db"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import { Plus, MapPin, Calendar, Users } from "lucide-react"
+import { Plus, MapPin, Calendar, Users, AlertCircle } from "lucide-react"
 
 interface Club {
   id: number
@@ -18,21 +18,110 @@ interface Club {
   active: boolean
 }
 
-async function getClubs(): Promise<Club[]> {
+async function getClubs(): Promise<{ clubs: Club[]; error: string | null }> {
   try {
     const clubs = await sql`
       SELECT * FROM clubs 
       ORDER BY name ASC
     `
-    return clubs as Club[]
-  } catch (error) {
-    handleDbError(error)
+    return { clubs: clubs as Club[], error: null }
+  } catch (error: any) {
+    if (error.message.includes('relation "clubs" does not exist')) {
+      return { clubs: [], error: "database_not_setup" }
+    }
+    return { clubs: [], error: error.message }
   }
 }
 
 export default async function ClubsPage() {
-  const clubs = await getClubs()
+  const { clubs, error } = await getClubs()
 
+  // Handle database not set up
+  if (error === "database_not_setup") {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Clubs</h1>
+          <p className="text-muted-foreground">Manage EDFL club information and details</p>
+        </div>
+
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardHeader>
+            <CardTitle className="flex items-center text-yellow-700">
+              <AlertCircle className="h-5 w-5 mr-2" />
+              Database Setup Required
+            </CardTitle>
+            <CardDescription className="text-yellow-600">
+              The EDFL database tables haven't been created yet. You need to run the database setup scripts.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="p-4 bg-white rounded border">
+              <h3 className="font-semibold mb-2">Quick Setup Steps:</h3>
+              <ol className="list-decimal list-inside space-y-1 text-sm">
+                <li>
+                  Go to the{" "}
+                  <Link href="/test-connection" className="text-blue-600 underline">
+                    Test Connection
+                  </Link>{" "}
+                  page
+                </li>
+                <li>Verify your database connection is working</li>
+                <li>Run the database setup scripts to create tables</li>
+                <li>Return here to see your EDFL clubs</li>
+              </ol>
+            </div>
+            <div className="flex gap-3">
+              <Link href="/test-connection">
+                <Button>
+                  <AlertCircle className="h-4 w-4 mr-2" />
+                  Test Connection
+                </Button>
+              </Link>
+              <Link href="/admin">
+                <Button variant="outline">Go to Admin</Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // Handle other errors
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Clubs</h1>
+          <p className="text-muted-foreground">Manage EDFL club information and details</p>
+        </div>
+
+        <Card className="border-red-200 bg-red-50">
+          <CardHeader>
+            <CardTitle className="flex items-center text-red-700">
+              <AlertCircle className="h-5 w-5 mr-2" />
+              Database Error
+            </CardTitle>
+            <CardDescription className="text-red-600">There was an error connecting to the database.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="p-3 bg-red-100 rounded border border-red-200 mb-4">
+              <code className="text-red-700 text-sm">{error}</code>
+            </div>
+            <Link href="/test-connection">
+              <Button>
+                <AlertCircle className="h-4 w-4 mr-2" />
+                Diagnose Issue
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // Normal clubs display
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
