@@ -19,6 +19,7 @@ async function getClubs() {
     `
     return clubs
   } catch (error) {
+    console.error("Error fetching clubs:", error)
     return []
   }
 }
@@ -26,24 +27,43 @@ async function getClubs() {
 async function createSeason(formData: FormData) {
   "use server"
 
-  const year = Number.parseInt(formData.get("year") as string)
-  const name = formData.get("name") as string
-  const division = formData.get("division") as string
-  const startDate = formData.get("startDate") as string
-  const endDate = formData.get("endDate") as string
-  const grandFinalDate = formData.get("grandFinalDate") as string
-  const premierClubId = formData.get("premierClubId") as string
-  const runnerUpClubId = formData.get("runnerUpClubId") as string
-  const woodenSpoonClubId = formData.get("woodenSpoonClubId") as string
-  const leadingGoalkickerName = formData.get("leadingGoalkickerName") as string
-  const leadingGoalkickerGoals = formData.get("leadingGoalkickerGoals") as string
-  const bestAndFairestWinner = formData.get("bestAndFairestWinner") as string
-  const totalRounds = formData.get("totalRounds") as string
-  const finalsFormat = formData.get("finalsFormat") as string
-  const seasonSummary = formData.get("seasonSummary") as string
-  const active = formData.get("active") === "on"
-
   try {
+    const year = Number.parseInt(formData.get("year") as string)
+    const name = formData.get("name") as string
+    const division = formData.get("division") as string
+    const startDate = formData.get("startDate") as string
+    const endDate = formData.get("endDate") as string
+    const grandFinalDate = formData.get("grandFinalDate") as string
+    const premierClubId = formData.get("premierClubId") as string
+    const runnerUpClubId = formData.get("runnerUpClubId") as string
+    const woodenSpoonClubId = formData.get("woodenSpoonClubId") as string
+    const leadingGoalkickerName = formData.get("leadingGoalkickerName") as string
+    const leadingGoalkickerGoals = formData.get("leadingGoalkickerGoals") as string
+    const bestAndFairestWinner = formData.get("bestAndFairestWinner") as string
+    const totalRounds = formData.get("totalRounds") as string
+    const finalsFormat = formData.get("finalsFormat") as string
+    const seasonSummary = formData.get("seasonSummary") as string
+    const active = formData.get("active") === "on"
+
+    console.log("Creating season with data:", {
+      year,
+      name,
+      division,
+      startDate,
+      endDate,
+      active,
+    })
+
+    // Validate required fields
+    if (!year || isNaN(year)) {
+      throw new Error("Year is required and must be a valid number")
+    }
+
+    // Check if DATABASE_URL is available
+    if (!process.env.DATABASE_URL) {
+      throw new Error("DATABASE_URL environment variable is not set")
+    }
+
     const result = await sql`
       INSERT INTO seasons (
         year, name, division, start_date, end_date, grand_final_date,
@@ -52,26 +72,94 @@ async function createSeason(formData: FormData) {
         total_rounds, finals_format, season_summary, active,
         created_at, updated_at
       ) VALUES (
-        ${year}, ${name || null}, ${division || "Premier Division"}, 
-        ${startDate || null}, ${endDate || null}, ${grandFinalDate || null},
-        ${premierClubId || null}, ${runnerUpClubId || null}, ${woodenSpoonClubId || null},
-        ${leadingGoalkickerName || null}, ${leadingGoalkickerGoals ? Number.parseInt(leadingGoalkickerGoals) : null}, 
-        ${bestAndFairestWinner || null}, ${totalRounds ? Number.parseInt(totalRounds) : null}, 
-        ${finalsFormat || null}, ${seasonSummary || null}, ${active},
-        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        ${year}, 
+        ${name || null}, 
+        ${division || "Premier Division"}, 
+        ${startDate || null}, 
+        ${endDate || null}, 
+        ${grandFinalDate || null},
+        ${premierClubId || null}, 
+        ${runnerUpClubId || null}, 
+        ${woodenSpoonClubId || null},
+        ${leadingGoalkickerName || null}, 
+        ${leadingGoalkickerGoals ? Number.parseInt(leadingGoalkickerGoals) : null}, 
+        ${bestAndFairestWinner || null}, 
+        ${totalRounds ? Number.parseInt(totalRounds) : null}, 
+        ${finalsFormat || null}, 
+        ${seasonSummary || null}, 
+        ${active},
+        CURRENT_TIMESTAMP, 
+        CURRENT_TIMESTAMP
       ) RETURNING id
     `
 
     const seasonId = result[0].id
+    console.log("Season created successfully with ID:", seasonId)
+
     redirect(`/historical-seasons/${seasonId}`)
   } catch (error) {
     console.error("Error creating season:", error)
-    throw new Error("Failed to create season")
+
+    // More detailed error logging
+    if (error instanceof Error) {
+      console.error("Error message:", error.message)
+      console.error("Error stack:", error.stack)
+    }
+
+    // Re-throw with more context
+    throw new Error(`Failed to create season: ${error instanceof Error ? error.message : "Unknown error"}`)
   }
 }
 
 export default async function NewSeasonPage() {
-  const clubs = await getClubs()
+  let clubs = []
+  let hasDbConnection = true
+
+  try {
+    clubs = await getClubs()
+  } catch (error) {
+    console.error("Failed to load clubs:", error)
+    hasDbConnection = false
+  }
+
+  // Show database connection warning if needed
+  if (!hasDbConnection) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center space-x-4">
+          <Link href="/historical-seasons">
+            <Button variant="outline" size="sm">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Seasons
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-3xl font-bold">Add New Season</h1>
+            <p className="text-muted-foreground">Create a new season record in the EDFL database</p>
+          </div>
+        </div>
+
+        <Card className="border-red-200 bg-red-50">
+          <CardHeader>
+            <CardTitle className="text-red-700">Database Connection Error</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-red-600 mb-4">
+              Unable to connect to the database. Please check your DATABASE_URL environment variable.
+            </p>
+            <div className="flex space-x-3">
+              <Link href="/test-connection">
+                <Button>Test Connection</Button>
+              </Link>
+              <Link href="/setup-database">
+                <Button variant="outline">Setup Database</Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -125,7 +213,7 @@ export default async function NewSeasonPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="totalRounds">Total Rounds</Label>
-                <Input type="number" name="totalRounds" min="1" placeholder="e.g., 18" />
+                <Input type="number" name="totalRounds" min="1" max="30" placeholder="e.g., 18" />
               </div>
             </div>
 
@@ -152,7 +240,7 @@ export default async function NewSeasonPage() {
 
             {/* Results */}
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Season Results</h3>
+              <h3 className="text-lg font-semibold">Season Results (Optional)</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="premierClubId">Premier</Label>
@@ -161,6 +249,7 @@ export default async function NewSeasonPage() {
                       <SelectValue placeholder="Select premier club" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="none">No selection</SelectItem>
                       {clubs.map((club: any) => (
                         <SelectItem key={club.id} value={club.id.toString()}>
                           {club.name} {club.nickname && `(${club.nickname})`}
@@ -177,6 +266,7 @@ export default async function NewSeasonPage() {
                       <SelectValue placeholder="Select runner-up club" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="none">No selection</SelectItem>
                       {clubs.map((club: any) => (
                         <SelectItem key={club.id} value={club.id.toString()}>
                           {club.name} {club.nickname && `(${club.nickname})`}
@@ -193,6 +283,7 @@ export default async function NewSeasonPage() {
                       <SelectValue placeholder="Select wooden spoon club" />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="none">No selection</SelectItem>
                       {clubs.map((club: any) => (
                         <SelectItem key={club.id} value={club.id.toString()}>
                           {club.name} {club.nickname && `(${club.nickname})`}
@@ -206,7 +297,7 @@ export default async function NewSeasonPage() {
 
             {/* Awards */}
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Individual Awards</h3>
+              <h3 className="text-lg font-semibold">Individual Awards (Optional)</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <Label htmlFor="leadingGoalkickerName">Leading Goalkicker</Label>
@@ -215,7 +306,7 @@ export default async function NewSeasonPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="leadingGoalkickerGoals">Goals Kicked</Label>
-                  <Input type="number" name="leadingGoalkickerGoals" min="0" placeholder="Number of goals" />
+                  <Input type="number" name="leadingGoalkickerGoals" min="0" max="200" placeholder="Number of goals" />
                 </div>
 
                 <div className="space-y-2">
