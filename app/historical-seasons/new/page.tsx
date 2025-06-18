@@ -7,20 +7,26 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
 import Link from "next/link"
-import { ArrowLeft, Trophy } from "lucide-react"
+import { ArrowLeft, Trophy, AlertCircle } from "lucide-react"
 import { redirect } from "next/navigation"
 
 async function getClubs() {
   try {
+    // Check if DATABASE_URL exists first
+    if (!process.env.DATABASE_URL) {
+      console.error("DATABASE_URL not found")
+      return { clubs: [], error: "DATABASE_URL not configured" }
+    }
+
     const clubs = await sql`
       SELECT id, name, nickname 
       FROM clubs 
       ORDER BY name
     `
-    return clubs
+    return { clubs, error: null }
   } catch (error) {
     console.error("Error fetching clubs:", error)
-    return []
+    return { clubs: [], error: error instanceof Error ? error.message : "Unknown error" }
   }
 }
 
@@ -28,9 +34,24 @@ async function createSeason(formData: FormData) {
   "use server"
 
   try {
-    const year = Number.parseInt(formData.get("year") as string)
+    // Check DATABASE_URL first
+    if (!process.env.DATABASE_URL) {
+      throw new Error("DATABASE_URL environment variable is not set. Please configure it in Vercel.")
+    }
+
+    // Extract and validate form data
+    const yearStr = formData.get("year") as string
+    if (!yearStr) {
+      throw new Error("Year is required")
+    }
+
+    const year = Number.parseInt(yearStr)
+    if (isNaN(year) || year < 1889 || year > new Date().getFullYear() + 5) {
+      throw new Error("Please enter a valid year between 1889 and " + (new Date().getFullYear() + 5))
+    }
+
     const name = formData.get("name") as string
-    const division = formData.get("division") as string
+    const division = (formData.get("division") as string) || "Premier Division"
     const startDate = formData.get("startDate") as string
     const endDate = formData.get("endDate") as string
     const grandFinalDate = formData.get("grandFinalDate") as string
@@ -38,32 +59,38 @@ async function createSeason(formData: FormData) {
     const runnerUpClubId = formData.get("runnerUpClubId") as string
     const woodenSpoonClubId = formData.get("woodenSpoonClubId") as string
     const leadingGoalkickerName = formData.get("leadingGoalkickerName") as string
-    const leadingGoalkickerGoals = formData.get("leadingGoalkickerGoals") as string
+    const leadingGoalkickerGoalsStr = formData.get("leadingGoalkickerGoals") as string
     const bestAndFairestWinner = formData.get("bestAndFairestWinner") as string
-    const totalRounds = formData.get("totalRounds") as string
+    const totalRoundsStr = formData.get("totalRounds") as string
     const finalsFormat = formData.get("finalsFormat") as string
     const seasonSummary = formData.get("seasonSummary") as string
     const active = formData.get("active") === "on"
 
-    console.log("Creating season with data:", {
-      year,
-      name,
-      division,
-      startDate,
-      endDate,
-      active,
-    })
+    // Parse optional numbers
+    const leadingGoalkickerGoals = leadingGoalkickerGoalsStr ? Number.parseInt(leadingGoalkickerGoalsStr) : null
+    const totalRounds = totalRoundsStr ? Number.parseInt(totalRoundsStr) : null
 
-    // Validate required fields
-    if (!year || isNaN(year)) {
-      throw new Error("Year is required and must be a valid number")
+    // Convert "none" selections to null
+    const premierClub = premierClubId === "none" ? null : premierClubId
+    const runnerUpClub = runnerUpClubId === "none" ? null : runnerUpClubId
+    const woodenSpoonClub = woodenSpoonClubId === "none" ? null : woodenSpoonClubId
+
+    console.log("Creating season:", { year, name, division, active })
+
+    // Check if seasons table exists
+    const tableCheck = await sql`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'seasons'
+      )
+    `
+
+    if (!tableCheck[0].exists) {
+      throw new Error("Database tables not found. Please run the database setup first.")
     }
 
-    // Check if DATABASE_URL is available
-    if (!process.env.DATABASE_URL) {
-      throw new Error("DATABASE_URL environment variable is not set")
-    }
-
+    // Insert the season
     const result = await sql`
       INSERT INTO seasons (
         year, name, division, start_date, end_date, grand_final_date,
@@ -74,17 +101,17 @@ async function createSeason(formData: FormData) {
       ) VALUES (
         ${year}, 
         ${name || null}, 
-        ${division || "Premier Division"}, 
+        ${division}, 
         ${startDate || null}, 
         ${endDate || null}, 
         ${grandFinalDate || null},
-        ${premierClubId || null}, 
-        ${runnerUpClubId || null}, 
-        ${woodenSpoonClubId || null},
+        ${premierClub}, 
+        ${runnerUpClub}, 
+        ${woodenSpoonClub},
         ${leadingGoalkickerName || null}, 
-        ${leadingGoalkickerGoals ? Number.parseInt(leadingGoalkickerGoals) : null}, 
+        ${leadingGoalkickerGoals}, 
         ${bestAndFairestWinner || null}, 
-        ${totalRounds ? Number.parseInt(totalRounds) : null}, 
+        ${totalRounds}, 
         ${finalsFormat || null}, 
         ${seasonSummary || null}, 
         ${active},
@@ -98,68 +125,27 @@ async function createSeason(formData: FormData) {
 
     redirect(`/historical-seasons/${seasonId}`)
   } catch (error) {
-    console.error("Error creating season:", error)
+    console.error("Detailed error creating season:", error)
 
-    // More detailed error logging
+    // Create a more specific error message
+    let errorMessage = "Failed to create season"
     if (error instanceof Error) {
-      console.error("Error message:", error.message)
-      console.error("Error stack:", error.stack)
+      errorMessage = error.message
     }
 
-    // Re-throw with more context
-    throw new Error(`Failed to create season: ${error instanceof Error ? error.message : "Unknown error"}`)
+    // For now, redirect to an error page with the message
+    const encodedError = encodeURIComponent(errorMessage)
+    redirect(`/historical-seasons/new?error=${encodedError}`)
   }
 }
 
-export default async function NewSeasonPage() {
-  let clubs = []
-  let hasDbConnection = true
-
-  try {
-    clubs = await getClubs()
-  } catch (error) {
-    console.error("Failed to load clubs:", error)
-    hasDbConnection = false
-  }
-
-  // Show database connection warning if needed
-  if (!hasDbConnection) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center space-x-4">
-          <Link href="/historical-seasons">
-            <Button variant="outline" size="sm">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Seasons
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-3xl font-bold">Add New Season</h1>
-            <p className="text-muted-foreground">Create a new season record in the EDFL database</p>
-          </div>
-        </div>
-
-        <Card className="border-red-200 bg-red-50">
-          <CardHeader>
-            <CardTitle className="text-red-700">Database Connection Error</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-red-600 mb-4">
-              Unable to connect to the database. Please check your DATABASE_URL environment variable.
-            </p>
-            <div className="flex space-x-3">
-              <Link href="/test-connection">
-                <Button>Test Connection</Button>
-              </Link>
-              <Link href="/setup-database">
-                <Button variant="outline">Setup Database</Button>
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
+export default async function NewSeasonPage({
+  searchParams,
+}: {
+  searchParams: { error?: string }
+}) {
+  const { clubs, error: clubsError } = await getClubs()
+  const formError = searchParams.error
 
   return (
     <div className="space-y-6">
@@ -176,6 +162,58 @@ export default async function NewSeasonPage() {
           <p className="text-muted-foreground">Create a new season record in the EDFL database</p>
         </div>
       </div>
+
+      {/* Error Messages */}
+      {formError && (
+        <Card className="border-red-200 bg-red-50">
+          <CardHeader>
+            <CardTitle className="text-red-700 flex items-center">
+              <AlertCircle className="h-5 w-5 mr-2" />
+              Error Creating Season
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-red-600 mb-4">{decodeURIComponent(formError)}</p>
+            <div className="flex space-x-3">
+              <Link href="/test-connection">
+                <Button size="sm">Test Database</Button>
+              </Link>
+              <Link href="/setup-database">
+                <Button size="sm" variant="outline">
+                  Setup Database
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {clubsError && (
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardHeader>
+            <CardTitle className="text-yellow-700 flex items-center">
+              <AlertCircle className="h-5 w-5 mr-2" />
+              Database Connection Issue
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-yellow-600 mb-4">Could not load clubs: {clubsError}</p>
+            <p className="text-sm text-yellow-600 mb-4">
+              You can still create a season, but club selections won't be available.
+            </p>
+            <div className="flex space-x-3">
+              <Link href="/test-connection">
+                <Button size="sm">Test Connection</Button>
+              </Link>
+              <Link href="/setup-database">
+                <Button size="sm" variant="outline">
+                  Setup Database
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Form */}
       <Card className="max-w-4xl">
@@ -196,7 +234,7 @@ export default async function NewSeasonPage() {
                   name="year"
                   required
                   min="1889"
-                  max={new Date().getFullYear() + 1}
+                  max={new Date().getFullYear() + 5}
                   placeholder="e.g., 2024"
                 />
               </div>
@@ -238,62 +276,64 @@ export default async function NewSeasonPage() {
               </div>
             </div>
 
-            {/* Results */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Season Results (Optional)</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="premierClubId">Premier</Label>
-                  <Select name="premierClubId">
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select premier club" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No selection</SelectItem>
-                      {clubs.map((club: any) => (
-                        <SelectItem key={club.id} value={club.id.toString()}>
-                          {club.name} {club.nickname && `(${club.nickname})`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+            {/* Results - Only show if clubs loaded successfully */}
+            {!clubsError && clubs.length > 0 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold">Season Results (Optional)</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="premierClubId">Premier</Label>
+                    <Select name="premierClubId">
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select premier club" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No selection</SelectItem>
+                        {clubs.map((club: any) => (
+                          <SelectItem key={club.id} value={club.id.toString()}>
+                            {club.name} {club.nickname && `(${club.nickname})`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="runnerUpClubId">Runner-up</Label>
-                  <Select name="runnerUpClubId">
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select runner-up club" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No selection</SelectItem>
-                      {clubs.map((club: any) => (
-                        <SelectItem key={club.id} value={club.id.toString()}>
-                          {club.name} {club.nickname && `(${club.nickname})`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="runnerUpClubId">Runner-up</Label>
+                    <Select name="runnerUpClubId">
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select runner-up club" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No selection</SelectItem>
+                        {clubs.map((club: any) => (
+                          <SelectItem key={club.id} value={club.id.toString()}>
+                            {club.name} {club.nickname && `(${club.nickname})`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="woodenSpoonClubId">Wooden Spoon</Label>
-                  <Select name="woodenSpoonClubId">
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select wooden spoon club" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No selection</SelectItem>
-                      {clubs.map((club: any) => (
-                        <SelectItem key={club.id} value={club.id.toString()}>
-                          {club.name} {club.nickname && `(${club.nickname})`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="space-y-2">
+                    <Label htmlFor="woodenSpoonClubId">Wooden Spoon</Label>
+                    <Select name="woodenSpoonClubId">
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select wooden spoon club" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No selection</SelectItem>
+                        {clubs.map((club: any) => (
+                          <SelectItem key={club.id} value={club.id.toString()}>
+                            {club.name} {club.nickname && `(${club.nickname})`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Awards */}
             <div className="space-y-4">
