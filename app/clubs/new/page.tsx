@@ -3,7 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import Link from "next/link"
 import { ArrowLeft, Users } from "lucide-react"
@@ -16,28 +15,23 @@ async function createClub(formData: FormData) {
   const nickname = formData.get("nickname") as string
   const foundedYear = formData.get("foundedYear") as string
   const homeGround = formData.get("homeGround") as string
-  const groundAddress = formData.get("groundAddress") as string
   const colors = formData.get("colors") as string
   const website = formData.get("website") as string
   const contactEmail = formData.get("contactEmail") as string
   const contactPhone = formData.get("contactPhone") as string
-  const presidentName = formData.get("presidentName") as string
-  const coachName = formData.get("coachName") as string
   const active = formData.get("active") === "on"
-  const clubHistory = formData.get("clubHistory") as string
 
   try {
     const result = await sql`
       INSERT INTO clubs (
-        name, nickname, founded_year, home_ground, ground_address, colors, 
-        website, contact_email, contact_phone, president_name, coach_name, 
-        active, club_history, created_at, updated_at
+        name, nickname, founded_year, home_ground, colors, 
+        website, contact_email, contact_phone, active, 
+        created_at, updated_at
       ) VALUES (
         ${name}, ${nickname || null}, ${foundedYear ? Number.parseInt(foundedYear) : null}, 
-        ${homeGround || null}, ${groundAddress || null}, ${colors || null}, 
+        ${homeGround || null}, ${colors || null}, 
         ${website || null}, ${contactEmail || null}, ${contactPhone || null}, 
-        ${presidentName || null}, ${coachName || null}, ${active}, 
-        ${clubHistory || null}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        ${active}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
       ) RETURNING id
     `
 
@@ -113,11 +107,6 @@ export default function NewClubPage() {
                   <Label htmlFor="homeGround">Home Ground</Label>
                   <Input type="text" name="homeGround" placeholder="e.g., Keilor Park" />
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="groundAddress">Ground Address</Label>
-                  <Input type="text" name="groundAddress" placeholder="Full address of the ground" />
-                </div>
               </div>
             </div>
 
@@ -140,32 +129,6 @@ export default function NewClubPage() {
                   <Input type="url" name="website" placeholder="https://www.clubname.com.au" />
                 </div>
               </div>
-            </div>
-
-            {/* Officials */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Current Officials</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label htmlFor="presidentName">President</Label>
-                  <Input type="text" name="presidentName" placeholder="President's name" />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="coachName">Senior Coach</Label>
-                  <Input type="text" name="coachName" placeholder="Coach's name" />
-                </div>
-              </div>
-            </div>
-
-            {/* Club History */}
-            <div className="space-y-2">
-              <Label htmlFor="clubHistory">Club History</Label>
-              <Textarea
-                name="clubHistory"
-                placeholder="Write about the club's history, significant moments, traditions..."
-                rows={6}
-              />
             </div>
 
             {/* Status */}
