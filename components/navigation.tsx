@@ -9,7 +9,8 @@ const navItems = [
   { name: "League History", href: "/league-history" },
   { name: "Historical Seasons", href: "/historical-seasons" },
   { name: "Admin", href: "/admin" },
-  { name: "Test Connection", href: "/test-connection" }, // Add this line
+  { name: "Setup Database", href: "/setup-database" },
+  { name: "Test Connection", href: "/test-connection" },
 ]
 
 export function Navigation() {
